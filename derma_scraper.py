@@ -56,84 +56,65 @@ FIELD_MASK = ",".join([
     "nextPageToken",
 ])
 
-# Country -> ISO regionCode + cities (lat, lng).
-# Users can also add their own countries/cities at runtime via the GUI.
-COUNTRY_CITIES = {
-    "Egypt": {
-        "region": "EG",
-        "cities": {
-            "Cairo": (30.0444, 31.2357),
-            "Giza": (30.0131, 31.2089),
-            "Alexandria": (31.2001, 29.9187),
-            "New Cairo": (30.0300, 31.4913),
-            "6th of October City": (29.9667, 30.9333),
-            "Shubra El Kheima": (30.1286, 31.2422),
-            "Mansoura": (31.0409, 31.3785),
-            "Tanta": (30.7865, 31.0004),
-            "Zagazig": (30.5877, 31.5020),
-            "Mahalla El Kubra": (30.9762, 31.1669),
-            "Damanhur": (31.0341, 30.4682),
-            "Banha": (30.4599, 31.1842),
-            "Kafr El Sheikh": (31.1117, 30.9398),
-            "Port Said": (31.2653, 32.3019),
-            "Ismailia": (30.5965, 32.2715),
-            "Suez": (29.9737, 32.5263),
-            "Damietta": (31.4165, 31.8133),
-            "Asyut": (27.1809, 31.1837),
-            "Sohag": (26.5591, 31.6957),
-            "Minya": (28.1099, 30.7503),
-            "Beni Suef": (29.0744, 31.0978),
-            "Faiyum": (29.3084, 30.8428),
-            "Qena": (26.1551, 32.7160),
-            "Luxor": (25.6872, 32.6396),
-            "Aswan": (24.0889, 32.8998),
-            "Hurghada": (27.2579, 33.8116),
-            "Sharm El Sheikh": (27.9158, 34.3300),
-            "Marsa Matruh": (31.3543, 27.2373),
-        },
-    },
-    "Saudi Arabia": {
-        "region": "SA",
-        "cities": {
-            "Riyadh": (24.7136, 46.6753),
-            "Jeddah": (21.4858, 39.1925),
-            "Mecca": (21.3891, 39.8579),
-            "Medina": (24.5247, 39.5692),
-            "Dammam": (26.4207, 50.0888),
-            "Khobar": (26.2794, 50.2083),
-            "Dhahran": (26.2884, 50.1140),
-            "Jubail": (27.0046, 49.6469),
-            "Hofuf (Al-Ahsa)": (25.3833, 49.5833),
-            "Qatif": (26.5196, 49.9962),
-            "Taif": (21.4373, 40.5127),
-            "Buraidah": (26.3590, 43.9818),
-            "Unaizah": (26.0843, 43.9935),
-            "Tabuk": (28.3838, 36.5550),
-            "Hail": (27.5114, 41.7208),
-            "Abha": (18.2164, 42.5053),
-            "Khamis Mushait": (18.3000, 42.7333),
-            "Najran": (17.4924, 44.1277),
-            "Jazan": (16.8892, 42.5611),
-            "Yanbu": (24.0895, 38.0618),
-            "Al Kharj": (24.1556, 47.3120),
-            "Sakaka": (29.9697, 40.2064),
-            "Arar": (30.9753, 41.0381),
-        },
-    },
-    "United Arab Emirates": {
-        "region": "AE",
-        "cities": {
-            "Dubai": (25.2048, 55.2708),
-            "Abu Dhabi": (24.4539, 54.3773),
-            "Sharjah": (25.3463, 55.4209),
-            "Ajman": (25.4052, 55.5136),
-            "Umm Al Quwain": (25.5647, 55.5552),
-            "Ras Al Khaimah": (25.7895, 55.9432),
-            "Fujairah": (25.1288, 56.3265),
-            "Al Ain": (24.1302, 55.8023),
-        },
-    },
+# Region -> countries we cover. Display name : ISO-2 code (used as Places regionCode).
+# Cities for each are pulled from the geonamescache package at runtime.
+# Grouped Gulf -> wider Middle East -> North Africa (some countries span groups).
+REGION_COUNTRIES = {
+    # --- Gulf States ---
+    "Saudi Arabia": "SA",
+    "United Arab Emirates": "AE",
+    "Qatar": "QA",
+    "Kuwait": "KW",
+    "Bahrain": "BH",
+    "Oman": "OM",
+    # --- Wider Middle East ---
+    "Egypt": "EG",
+    "Jordan": "JO",
+    "Lebanon": "LB",
+    "Syria": "SY",
+    "Iraq": "IQ",
+    "Iran": "IR",
+    "Yemen": "YE",
+    "Palestine": "PS",
+    "Israel": "IL",
+    "Turkey": "TR",
+    "Cyprus": "CY",
+    # --- North Africa ---
+    "Morocco": "MA",
+    "Algeria": "DZ",
+    "Tunisia": "TN",
+    "Libya": "LY",
+    "Sudan": "SD",
+    "Mauritania": "MR",
+    "Western Sahara": "EH",
 }
+
+
+@st.cache_data(show_spinner=False)
+def build_region_catalogue() -> dict:
+    """
+    Build {country: {"region": iso2, "cities": {city: (lat, lng)}}} for every
+    country in REGION_COUNTRIES, using the offline geonamescache dataset.
+    Cities are ordered most-populous-first; duplicate names keep the largest.
+    """
+    import geonamescache
+    gc = geonamescache.GeonamesCache()
+
+    by_cc = {}
+    for c in gc.get_cities().values():
+        by_cc.setdefault(c.get("countrycode"), []).append(c)
+
+    catalogue = {}
+    for name, iso in REGION_COUNTRIES.items():
+        items = sorted(by_cc.get(iso, []),
+                       key=lambda x: x.get("population", 0) or 0, reverse=True)
+        cities = {}
+        for it in items:
+            cn = it["name"]
+            if cn not in cities:  # first (most populous) wins on duplicate name
+                cities[cn] = (float(it["latitude"]), float(it["longitude"]))
+        catalogue[name] = {"region": iso, "cities": cities}
+    return catalogue
 
 DEFAULT_KEYWORDS_EN = [
     "dermatology clinic",
@@ -426,7 +407,7 @@ def main():
                 st.rerun()
 
         st.markdown("**Add a city**")
-        known = list(merge_catalogue(COUNTRY_CITIES, st.session_state.get("custom_data", {})).keys())
+        known = list(merge_catalogue(build_region_catalogue(), st.session_state.get("custom_data", {})).keys())
         c1, c2, c3, c4, c5 = st.columns([2, 2, 1.3, 1.3, 1.2])
         ct_country = c1.selectbox("Country", known, key="nc_city_country")
         ct_city = c2.text_input("City name", key="nc_city_name")
@@ -435,7 +416,7 @@ def main():
         if c5.button("Add city", key="nc_city_btn"):
             if ct_country and ct_city.strip():
                 cd = st.session_state.setdefault("custom_data", {})
-                region = merge_catalogue(COUNTRY_CITIES, cd)[ct_country]["region"]
+                region = merge_catalogue(build_region_catalogue(), cd)[ct_country]["region"]
                 entry = cd.setdefault(ct_country, {"region": region, "cities": {}})
                 entry["cities"][ct_city.strip()] = (float(ct_lat), float(ct_lng))
                 st.rerun()
@@ -445,17 +426,40 @@ def main():
                 st.session_state["custom_data"] = {}
                 st.rerun()
 
-    catalogue = merge_catalogue(COUNTRY_CITIES, st.session_state.get("custom_data", {}))
+    catalogue = merge_catalogue(build_region_catalogue(), st.session_state.get("custom_data", {}))
     countries = st.multiselect(
         "Countries", list(catalogue.keys()),
-        default=[c for c in ["Egypt", "Saudi Arabia", "United Arab Emirates"]
-                 if c in catalogue],
+        default=[c for c in ["Egypt"] if c in catalogue],
+        help="Grouped Gulf → wider Middle East → North Africa.",
     )
+
+    # Quick-fill helpers — these set the per-country selections explicitly,
+    # which avoids accidentally running every city in the region at once.
+    if countries:
+        st.caption("Quick-fill cities for the selected countries:")
+        q1, q2, q3, q4 = st.columns(4)
+        top_n = q4.number_input("Top N", 1, 100, 10, label_visibility="collapsed")
+        if q1.button(f"⭐ Top {int(top_n)} per country"):
+            for c in countries:
+                st.session_state[f"cities_{c}"] = list(catalogue[c]["cities"])[:int(top_n)]
+            st.rerun()
+        if q2.button("🌍 ALL cities (heavy)"):
+            for c in countries:
+                st.session_state[f"cities_{c}"] = list(catalogue[c]["cities"])
+            st.rerun()
+        if q3.button("✖️ Clear cities"):
+            for c in countries:
+                st.session_state[f"cities_{c}"] = []
+            st.rerun()
+
     city_selections = {}
     for c in countries:
-        all_cities = list(catalogue[c]["cities"].keys())
+        opts = list(catalogue[c]["cities"].keys())
+        # seed a sensible default (top 10) the first time a country appears
+        if f"cities_{c}" not in st.session_state:
+            st.session_state[f"cities_{c}"] = opts[:10]
         city_selections[c] = st.multiselect(
-            f"{c} — cities", all_cities, default=all_cities, key=f"cities_{c}"
+            f"{c} — cities ({len(opts)} available)", opts, key=f"cities_{c}"
         )
 
     # --- 2. Keywords ------------------------------------------------------- #
