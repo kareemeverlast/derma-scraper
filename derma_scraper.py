@@ -146,24 +146,31 @@ def is_arabic(text: str) -> bool:
 
 
 def parse_place(p: dict, city: str, country: str) -> dict:
-    """Flatten one Places API result into a clean row."""
-    loc = p.get("location", {}) or {}
+    """Flatten one Places API result into a clean row.
+
+    The commented-out fields below are intentionally excluded from the export.
+    To bring any back, un-comment its line — it's already requested in
+    FIELD_MASK, so the column will populate automatically (no extra cost, since
+    rating/phone/website already set the billing tier). If you re-enable lat/lng,
+    also un-comment the `loc = ...` line just above the return.
+    """
+    # loc = p.get("location", {}) or {}              # needed only for lat/lng
     return {
-        "place_id": p.get("id", ""),
+        # "place_id": p.get("id", ""),               # removed (still used internally for dedup)
         "name": (p.get("displayName") or {}).get("text", ""),
-        "types": ", ".join(p.get("types", []) or []),
+        # "types": ", ".join(p.get("types", []) or []),   # removed
         "address": p.get("formattedAddress", ""),
         "city": city,
         "country": country,
-        "lat": loc.get("latitude"),
-        "lng": loc.get("longitude"),
-        "maps_url": p.get("googleMapsUri", ""),
+        # "lat": loc.get("latitude"),                # removed
+        # "lng": loc.get("longitude"),               # removed
+        # "maps_url": p.get("googleMapsUri", ""),    # removed
         "website": p.get("websiteUri", ""),
         "phone": p.get("internationalPhoneNumber", ""),
         "email": "",  # filled later (best-effort) from the clinic website
         "rating": p.get("rating"),
         "review_count": p.get("userRatingCount"),
-        "business_status": p.get("businessStatus", ""),
+        # "business_status": p.get("businessStatus", ""),  # removed
         "scraped_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
@@ -518,17 +525,26 @@ def main():
                     st.write("•", e)
 
         if not df.empty:
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            all_cols = list(df.columns)
+            show_cols = st.multiselect(
+                "Columns to include (table + downloads)",
+                all_cols, default=all_cols, key="show_cols",
+                help="Untick any column to drop it from the table and the exports.",
+            )
+            cols = [c for c in all_cols if c in show_cols] or all_cols
+            view = df[cols]
+
+            st.dataframe(view, use_container_width=True, hide_index=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M")
             d1, d2 = st.columns(2)
             d1.download_button(
-                "⬇️ Download Excel", to_excel_bytes(df),
+                "⬇️ Download Excel", to_excel_bytes(view),
                 f"derma_clinics_{ts}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
             # utf-8-sig so Arabic renders correctly when opened in Excel
             d2.download_button(
-                "⬇️ Download CSV", df.to_csv(index=False).encode("utf-8-sig"),
+                "⬇️ Download CSV", view.to_csv(index=False).encode("utf-8-sig"),
                 f"derma_clinics_{ts}.csv", "text/csv",
             )
 
