@@ -76,7 +76,6 @@ REGION_COUNTRIES = {
     "Iran": "IR",
     "Yemen": "YE",
     "Palestine": "PS",
-    "Israel": "IL",
     "Turkey": "TR",
     "Cyprus": "CY",
     # --- North Africa ---
