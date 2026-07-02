@@ -1,0 +1,10 @@
+# Runtime data — created by storage.py, holds in-progress/completed scrape runs
+scrape_runs.db
+scrape_runs.db-wal
+scrape_runs.db-shm
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
